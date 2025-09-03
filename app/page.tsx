@@ -12,9 +12,10 @@ import { ClientAuthButton } from '@/components/client-auth-button'
 export default function ChatPage() {
   const { data: messages } = useMessagesQuery()
   const [username, setUsername] = useState<string>('')
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false)
   const supabase = createClient()
   
-  // Get current user's name
+  // Get current user's name and authentication status
   useEffect(() => {
     const fetchUserProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -23,10 +24,30 @@ export default function ChatPage() {
         // Try to get the name from user metadata
         const name = user.user_metadata?.name || user.email?.split('@')[0] || 'Anonymous'
         setUsername(name)
+        setIsAuthenticated(true)
+      } else {
+        setUsername('Guest')
+        setIsAuthenticated(false)
       }
     }
     
     fetchUserProfile()
+    
+    // Listen for auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        const name = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Anonymous'
+        setUsername(name)
+        setIsAuthenticated(true)
+      } else {
+        setUsername('Guest')
+        setIsAuthenticated(false)
+      }
+    })
+    
+    return () => {
+      authListener.subscription.unsubscribe()
+    }
   }, [supabase])
   
   const handleMessage = async (messages: ChatMessage[]) => {
@@ -45,7 +66,8 @@ export default function ChatPage() {
           roomName="my-chat-room" 
           username={username || 'Guest'} 
           onMessage={handleMessage}
-          messages={messages} 
+          messages={messages}
+          isAuthenticated={isAuthenticated}
         />
       </div>
     </div>

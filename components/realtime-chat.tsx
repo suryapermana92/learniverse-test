@@ -9,14 +9,16 @@ import {
 } from '@/hooks/use-realtime-chat'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Send } from 'lucide-react'
+import { Send, Lock } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 interface RealtimeChatProps {
   roomName: string
   username: string
   onMessage?: (messages: ChatMessage[]) => void
   messages?: ChatMessage[]
+  isAuthenticated?: boolean
 }
 
 /**
@@ -32,6 +34,7 @@ export const RealtimeChat = ({
   username,
   onMessage,
   messages: initialMessages = [],
+  isAuthenticated = false,
 }: RealtimeChatProps) => {
   const { containerRef, scrollToBottom } = useChatScroll()
 
@@ -44,6 +47,26 @@ export const RealtimeChat = ({
     username,
   })
   const [newMessage, setNewMessage] = useState('')
+  const [authState, setAuthState] = useState(isAuthenticated)
+  const supabase = createClient()
+
+  // Check authentication status
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setAuthState(!!user)
+    }
+    
+    checkAuth()
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setAuthState(!!session?.user)
+    })
+
+    return () => {
+      authListener.subscription.unsubscribe()
+    }
+  }, [supabase])
 
   // Merge realtime messages with initial messages
   const allMessages = useMemo(() => {
@@ -72,12 +95,12 @@ export const RealtimeChat = ({
   const handleSendMessage = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
-      if (!newMessage.trim() || !isConnected) return
+      if (!newMessage.trim() || !isConnected || !authState) return
 
       sendMessage(newMessage)
       setNewMessage('')
     },
-    [newMessage, isConnected, sendMessage]
+    [newMessage, isConnected, sendMessage, authState]
   )
 
   return (
@@ -111,25 +134,34 @@ export const RealtimeChat = ({
       </div>
 
       <form onSubmit={handleSendMessage} className="flex w-full gap-2 border-t border-border p-4">
-        <Input
-          className={cn(
-            'rounded-full bg-background text-sm transition-all duration-300',
-            isConnected && newMessage.trim() ? 'w-[calc(100%-36px)]' : 'w-full'
-          )}
-          type="text"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="Type a message..."
-          disabled={!isConnected}
-        />
-        {isConnected && newMessage.trim() && (
-          <Button
-            className="aspect-square rounded-full animate-in fade-in slide-in-from-right-4 duration-300"
-            type="submit"
-            disabled={!isConnected}
-          >
-            <Send className="size-4" />
-          </Button>
+        {!authState ? (
+          <div className="flex w-full items-center justify-center gap-2 py-2 text-muted-foreground">
+            <Lock className="size-4" />
+            <span>Please sign in to send messages</span>
+          </div>
+        ) : (
+          <>
+            <Input
+              className={cn(
+                'rounded-full bg-background text-sm transition-all duration-300',
+                isConnected && newMessage.trim() && authState ? 'w-[calc(100%-36px)]' : 'w-full'
+              )}
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Type a message..."
+              disabled={!isConnected || !authState}
+            />
+            {isConnected && newMessage.trim() && authState && (
+              <Button
+                className="aspect-square rounded-full animate-in fade-in slide-in-from-right-4 duration-300"
+                type="submit"
+                disabled={!isConnected || !authState}
+              >
+                <Send className="size-4" />
+              </Button>
+            )}
+          </>
         )}
       </form>
     </div>
