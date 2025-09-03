@@ -35,9 +35,19 @@ export function useMessagesQuery() {
             name: message.user_name,
           },
           createdAt: message.created_at,
+          parentId: message.parent_id || undefined,
         }))
         
-        setData(formattedMessages)
+        // Calculate reply counts for each message
+        const messagesWithReplyCounts = formattedMessages.map(message => {
+          const replyCount = formattedMessages.filter(m => m.parentId === message.id).length
+          return {
+            ...message,
+            replyCount: replyCount > 0 ? replyCount : undefined
+          }
+        })
+        
+        setData(messagesWithReplyCounts)
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Failed to fetch messages'))
       } finally {
@@ -60,22 +70,43 @@ export function useMessagesQuery() {
           content: string;
           user_name: string;
           created_at: string;
+          parent_id?: string;
         }
         
         const newMessage = payload.new as DatabaseMessage
         
-        // Add the new message to the state
-        setData((prevMessages) => [
-          ...prevMessages,
-          {
-            id: newMessage.id,
-            content: newMessage.content,
-            user: {
-              name: newMessage.user_name,
-            },
-            createdAt: newMessage.created_at,
+        // Create the new message object
+        const messageObj: ChatMessage = {
+          id: newMessage.id,
+          content: newMessage.content,
+          user: {
+            name: newMessage.user_name,
           },
-        ])
+          createdAt: newMessage.created_at,
+          parentId: newMessage.parent_id || undefined,
+          replyCount: undefined
+        }
+        
+        // Add the new message to the state and update reply counts
+        setData((prevMessages) => {
+          const updatedMessages = [...prevMessages, messageObj]
+          
+          // If this is a reply, update the parent's reply count
+          if (messageObj.parentId) {
+            return updatedMessages.map(msg => {
+              if (msg.id === messageObj.parentId) {
+                const currentReplyCount = msg.replyCount || 0
+                return {
+                  ...msg,
+                  replyCount: currentReplyCount + 1
+                }
+              }
+              return msg
+            })
+          }
+          
+          return updatedMessages
+        })
       })
       .subscribe()
 

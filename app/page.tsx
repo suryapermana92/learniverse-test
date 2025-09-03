@@ -58,7 +58,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       <div className="flex items-center justify-between p-4 border-b">
-        <h1 className="text-2xl font-bold">Chat Room</h1>
+        <h1 className="text-2xl font-bold">Community</h1>
         <ClientAuthButton />
       </div>
       <div className="flex-1 overflow-hidden">

@@ -9,7 +9,7 @@ import {
 } from '@/hooks/use-realtime-chat'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Send, Lock } from 'lucide-react'
+import { Send, Lock, MessageSquare, PlusCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -47,6 +47,7 @@ export const RealtimeChat = ({
     username,
   })
   const [newMessage, setNewMessage] = useState('')
+  const [replyingTo, setReplyingTo] = useState<string | null>(null)
   const [authState, setAuthState] = useState(isAuthenticated)
   const supabase = createClient()
 
@@ -68,17 +69,23 @@ export const RealtimeChat = ({
     }
   }, [supabase])
 
-  // Merge realtime messages with initial messages
+  // Merge messages and group by parent/child relationships for thread structure
   const allMessages = useMemo(() => {
-    const mergedMessages = [...initialMessages, ...realtimeMessages]
-    // Remove duplicates based on message id
-    const uniqueMessages = mergedMessages.filter(
-      (message, index, self) => index === self.findIndex((m) => m.id === message.id)
-    )
-    // Sort by creation date
-    const sortedMessages = uniqueMessages.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-
-    return sortedMessages
+    const msgs = [...initialMessages, ...realtimeMessages]
+    
+    // Count replies for each parent message
+    const replyCountMap = msgs.reduce((acc, msg) => {
+      if (msg.parentId) {
+        acc[msg.parentId] = (acc[msg.parentId] || 0) + 1
+      }
+      return acc
+    }, {} as Record<string, number>)
+    
+    // Add reply counts to parent messages
+    return msgs.map(msg => ({
+      ...msg,
+      replyCount: replyCountMap[msg.id] || 0
+    }))
   }, [initialMessages, realtimeMessages])
 
   useEffect(() => {
@@ -97,73 +104,122 @@ export const RealtimeChat = ({
       e.preventDefault()
       if (!newMessage.trim() || !isConnected || !authState) return
 
-      sendMessage(newMessage)
+      // Include parentId in the message object if replying to a message
+      sendMessage(newMessage, replyingTo)
+      console.log(replyingTo)
       setNewMessage('')
+      setReplyingTo(null)
     },
-    [newMessage, isConnected, sendMessage, authState]
+    [newMessage, isConnected, sendMessage, authState, replyingTo]
   )
+  
+  const handleReply = useCallback((parentId: string) => {
+    setReplyingTo(parentId)
+    // Focus the input field
+    const inputField = document.getElementById('message-input')
+    if (inputField) {
+      inputField.focus()
+    }
+  }, [])
 
   return (
     <div className="flex flex-col h-full w-full bg-background text-foreground antialiased">
+      {/* Forum Header */}
+      <div className="border-b border-border p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-medium flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Discussion Forum
+          </h2>
+          <div className="text-xs text-muted-foreground">
+            {allMessages.length} {allMessages.length === 1 ? 'post' : 'posts'}
+          </div>
+        </div>
+      </div>
+      
       {/* Messages */}
       <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {allMessages.length === 0 ? (
-          <div className="text-center text-sm text-muted-foreground">
-            No messages yet. Start the conversation!
-          </div>
-        ) : null}
-        <div className="space-y-1">
-          {allMessages.map((message, index) => {
-            const prevMessage = index > 0 ? allMessages[index - 1] : null
-            const showHeader = !prevMessage || prevMessage.user.name !== message.user.name
-
-            return (
-              <div
-                key={message.id}
-                className="animate-in fade-in slide-in-from-bottom-4 duration-300"
-              >
-                <ChatMessageItem
-                  message={message}
-                  isOwnMessage={message.user.name === username}
-                  showHeader={showHeader}
-                />
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <form onSubmit={handleSendMessage} className="flex w-full gap-2 border-t border-border p-4">
-        {!authState ? (
-          <div className="flex w-full items-center justify-center gap-2 py-2 text-muted-foreground">
-            <Lock className="size-4" />
-            <span>Please sign in to send messages</span>
+          <div className="text-center p-8 border border-dashed rounded-lg">
+            <div className="text-muted-foreground mb-2">No posts yet</div>
+            <div className="text-sm">Be the first to start the discussion!</div>
           </div>
         ) : (
-          <>
+          <div className="space-y-6">
+            {allMessages.filter(msg => !msg.parentId).map((message: ChatMessage) => {
+              return (
+                <div
+                  key={message.id}
+                  className="animate-in fade-in slide-in-from-bottom-4 duration-300"
+                >
+                  <ChatMessageItem
+                    message={message}
+                    isOwnMessage={message.user.name === username}
+                    showHeader={true}
+                    onReply={authState ? handleReply : undefined}
+                    replies={allMessages.filter(msg => msg.parentId === message.id)}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-border p-4">
+        {!authState ? (
+          <div className="flex w-full items-center justify-center gap-2 py-4 text-muted-foreground bg-muted/20 rounded-lg">
+            <Lock className="size-4" />
+            <span>Please sign in to create a post</span>
+          </div>
+        ) : (
+          <form onSubmit={handleSendMessage} className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <PlusCircle className="h-5 w-5 text-primary" />
+              <h3 className="font-medium">
+                {replyingTo ? (
+                  <>
+                    Reply to post
+                    <span className="text-xs text-muted-foreground ml-2">
+                      {allMessages.find(msg => msg.id === replyingTo)?.content.substring(0, 30)}...
+                    </span>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="ml-2 text-xs"
+                      onClick={() => setReplyingTo(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                ) : 'Create a new post'}
+              </h3>
+            </div>
             <Input
-              className={cn(
-                'rounded-full bg-background text-sm transition-all duration-300',
-                isConnected && newMessage.trim() && authState ? 'w-[calc(100%-36px)]' : 'w-full'
-              )}
+              id="message-input"
+              className="w-full bg-background text-sm min-h-[100px] resize-y"
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
+              placeholder={replyingTo ? "Write your reply..." : "What's on your mind?"}
               disabled={!isConnected || !authState}
             />
-            {isConnected && newMessage.trim() && authState && (
+            <div className="flex justify-end">
               <Button
-                className="aspect-square rounded-full animate-in fade-in slide-in-from-right-4 duration-300"
+                className={cn(
+                  "gap-2",
+                  (!isConnected || !newMessage.trim() || !authState) && "opacity-50"
+                )}
                 type="submit"
-                disabled={!isConnected || !authState}
+                disabled={!isConnected || !newMessage.trim() || !authState}
               >
                 <Send className="size-4" />
+                {replyingTo ? 'Reply' : 'Post'}
               </Button>
-            )}
-          </>
+            </div>
+          </form>
         )}
-      </form>
+      </div>
     </div>
   )
 }

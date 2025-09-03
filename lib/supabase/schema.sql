@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT NOT NULL,
   user_name TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  room_name TEXT NOT NULL DEFAULT 'my-chat-room'
+  room_name TEXT NOT NULL DEFAULT 'my-chat-room',
+  parent_id UUID REFERENCES messages(id) NULL
 );
 
 -- Create index for faster queries by room
