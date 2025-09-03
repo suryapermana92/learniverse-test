@@ -7,6 +7,7 @@ import { storeMessages } from '@/lib/store-messages'
 import { createClient } from '@/lib/supabase/client'
 import type { ChatMessage } from '@/hooks/use-realtime-chat'
 import { useEffect, useState } from 'react'
+import { ClientAuthButton } from '@/components/client-auth-button'
 
 export default function ChatPage() {
   const { data: messages } = useMessagesQuery()
@@ -35,7 +36,10 @@ export default function ChatPage() {
  
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
-      <h1 className="text-2xl font-bold p-4 border-b">Chat Room</h1>
+      <div className="flex items-center justify-between p-4 border-b">
+        <h1 className="text-2xl font-bold">Chat Room</h1>
+        <ClientAuthButton />
+      </div>
       <div className="flex-1 overflow-hidden">
         <RealtimeChat 
           roomName="my-chat-room" 
